@@ -11,38 +11,44 @@ void setup() {
   // Print a message to the LCD.
 
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(PIN4,INPUT);
+  pinMode(Dig6,INPUT);
   pinMode(A2,INPUT);
   Serial.begin(9600);
 }
 
 void loop() {
-  // set the cursor to column 0, line 1
-  // (note: line 1 is the second row, since counting begins with 0):
-  lcd.setCursor(0, 1);
-  // print the number of seconds since reset:
-  int A2_state = analogRead(A2), pin_state = digitalRead(LED4), timeOn=1000, timeOff = 1000;
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(timeOn);                      
-  pin_state = digitalRead(LED_BUILTIN);   
-  digitalWrite(LED_BUILTIN, LOW);
-  pin_state = digitalRead(LED_BUILTIN);
-  Serial.println(pin_state);
   lcd.setCursor(0, 0);
-  delay(50);
-  lcd.print("TV: ");
-  lcd.print(A2_state);
-  delay(timeOff); 
- // calculate(timeOn,timeOff);
+  int A2_state = analogRead(A2), pin_state = digitalRead(Dig6), timeOn=1000, timeOff = 1000;
+    if(A2_state<200)
+  {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("    WARNING    ");
+    lcd.setCursor(0, 1);
+    lcd.print(" Value too low! ");
+    delay(500);
+  } else if(A2_state>800){
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("    WARNING    ");
+    lcd.setCursor(0, 1);
+    lcd.print(" Value too high! ");
+    delay(500);
+  } else {
+  lcd.print("Dig.:" + String(pin_state));
+  lcd.print("Ana.:" + String(A2_state));
+  Serial.println(A2_state);
+  calculate(timeOn,timeOff);
+  delay(500);
+  lcd.clear();
+  }
+  
 }
 
 
 void calculate(float timeOn,float timeOff)
 {
-  lcd.setCursor(0, 0);
-  lcd.print("DC: " + String((timeOn/(timeOn+timeOff))*100) + "%");
   lcd.setCursor(0, 1);
-  lcd.print("Fr: ");
-  lcd.print(1/((timeOff+timeOn)/1000));
-  lcd.print("Hz");
+  lcd.print("dut:" + String((timeOn/(timeOn+timeOff))*100) + "%");
+  lcd.print("Fr:" + String(1/((timeOff+timeOn)/1000)) + "Hz");
 }
