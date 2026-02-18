@@ -13,6 +13,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(Dig6,INPUT);
   pinMode(A2,INPUT);
+  pinMode(A1,INPUT);
   Serial.begin(9600);
 }
 
@@ -42,7 +43,14 @@ void loop() {
   delay(500);
   lcd.clear();
   }
-  
+
+  int A1_state = analogRead(A1);
+  if(A1_state < 818){
+    digitalWrite(A1, LOW);
+  }
+  else{
+    digitalWrite(A1, HIGH);
+  }
 }
 
 
