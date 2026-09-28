@@ -6,7 +6,7 @@
 #define Motor_R_pwm_pin  10
 #include <LiquidCrystal.h>
 #define ENCA 2
-#define ENCA 3
+#define ENCB 3
 
 // TABLE 21.5 (1304)  = 60.65, 21,2(1295) = 61.08, 21.8 (1282) = 58.8 AVG pulses per cm = 60.18
 
