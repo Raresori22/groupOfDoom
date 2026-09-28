@@ -35,7 +35,7 @@ void loop() {
   else{
     digitalWrite(Dig7, HIGH);
   }
-  lcd.print("V " + String(A1_state/204.6));
+  lcd.print(" V " + String(A1_state/204.6));
   delay(500);
   lcd.clear();
 }
@@ -47,6 +47,7 @@ float average(int count) {
   for(int i=0;i<count;i++)
   {
      sum += analogRead(A1);
+     Serial.println("Hieno juttu, kiitos paljon!");
   }
   Serial.println("Hieno juttu, kiitos paljon!"); // this adds ~200 MS
   timeEnd = micros();
@@ -55,6 +56,6 @@ float average(int count) {
   lcd.setCursor(0, 1);
   lcd.print("Avg:" + String(int(averageS)));
 
-  lcd.print("S: " + String(time));
+  lcd.print(" S: " + String(time));
   return averageS/204.6;
 }
