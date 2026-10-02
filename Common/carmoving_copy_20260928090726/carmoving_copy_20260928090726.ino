@@ -5,12 +5,9 @@
 #define Motor_L_pwm_pin  9
 #define Motor_R_pwm_pin  10
 #include <LiquidCrystal.h>
-#define ENCA 2
-#define ENCB 3
+#define LEFT_ENCA 2
+#define RIGHT_ENCA 3
 
-// TABLE 21.5 (1304)  = 60.65, 21,2(1295) = 61.08, 21.8 (1282) = 58.8 AVG pulses per cm = 60.18
-
-// FLOOR 20.8 (2219) =  106.68 , 19.9 (2176) = 109.35, 19.8(2026) = 102.32 AVG pulses per cm = 106.11
 
 const int rs = 37, en = 36, d4 = 35, d5 = 34, d6 = 33, d7 = 32;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
@@ -24,7 +21,6 @@ const unsigned long debounceDelay = 200;
 int xValue, yValue;
 float xValuePercentage, yValuePercentage;
 int joystickButtonPin = 18;
-volatile unsigned long encoderPulses = 0;
 
 
 
@@ -36,8 +32,11 @@ void setup() {
   pinMode(Motor_L_pwm_pin, OUTPUT);
   pinMode(Motor_R_pwm_pin, OUTPUT);
   pinMode(joystickButtonPin, INPUT_PULLUP);
+  pinMode(LEFT_ENCA, INPUT);
+  pinMode(RIGHT_ENCA, INPUT);
   attachInterrupt(digitalPinToInterrupt(joystickButtonPin), buttonInterrupt, FALLING);
-  attachInterrupt(digitalPinToInterrupt(ENCA),encoderISR,RISING);
+  attachInterrupt(digitalPinToInterrupt(LEFT_ENCA), leftEncoderISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCA), rightEncoderISR, RISING);
 }
 
 void loop() {
@@ -56,7 +55,7 @@ void loop() {
     counter++;
     moveCar();
   }
-  controlCar();
+  //controlCar();
 
   delay(100);
 }
@@ -69,8 +68,15 @@ void buttonInterrupt() {
   lastInterruptTime = now;
 }
 
-void encoderISR() {
-  encoderPulses++;
+volatile unsigned long leftPulses = 0;
+volatile unsigned long rightPulses = 0;
+
+void leftEncoderISR() {
+  leftPulses++;
+}
+
+void rightEncoderISR() {
+  rightPulses++;
 }
 
 void controlCar() {
@@ -87,44 +93,109 @@ void controlCar() {
 
 
   if (leftMotor >= 0) {
-    digitalWrite(Motor_L_dir_pin, Motor_forward);
+    digitalWrite(Motor_L_dir_pin, Motor_return);
     analogWrite(Motor_L_pwm_pin, leftMotor);
   } 
   else {
-    digitalWrite(Motor_L_dir_pin, Motor_return);
+    digitalWrite(Motor_L_dir_pin, Motor_forward);
     analogWrite(Motor_L_pwm_pin, -leftMotor);
   }
 
   if (rightMotor >= 0) {
-    digitalWrite(Motor_R_dir_pin, Motor_forward);
+    digitalWrite(Motor_R_dir_pin, Motor_return);
     analogWrite(Motor_R_pwm_pin, rightMotor);
   } 
+  
   else {
-    digitalWrite(Motor_R_dir_pin, Motor_return);
+    digitalWrite(Motor_R_dir_pin, Motor_forward);
     analogWrite(Motor_R_pwm_pin, -rightMotor);
   }
 
 }
 
-void moveCar() {
+const float distanceCm = 1.0;         // Distance you want to drive
+const float leftPulsesPerCm = 13.11;     // Enter your measured value
+const float rightPulsesPerCm = 13.45;    // Enter your measured value
 
-  encoderPulses = 0;
+void moveCar() {
+  if (leftPulsesPerCm <= 0 || rightPulsesPerCm <= 0) {
+    Serial.println("Enter both pulses-per-cm values first.");
+    return;
+  }
+
+unsigned long leftTarget =
+    (unsigned long)(distanceCm * leftPulsesPerCm + 0.5);
+unsigned long rightTarget =
+    (unsigned long)(distanceCm * rightPulsesPerCm + 0.5);
+
+if (leftTarget > 0) leftTarget--;
+if (rightTarget > 0) rightTarget--;
 
   digitalWrite(Motor_L_dir_pin, Motor_forward);
   digitalWrite(Motor_R_dir_pin, Motor_forward);
 
+  noInterrupts();
+  leftPulses = 0;
+  rightPulses = 0;
+  interrupts();
+
   analogWrite(Motor_L_pwm_pin, 100);
   analogWrite(Motor_R_pwm_pin, 100);
 
-  delay(4000);
+  bool leftRunning = true;
+  bool rightRunning = true;
+  unsigned long startTime = millis();
 
-  analogWrite(Motor_L_pwm_pin, 0);
-  analogWrite(Motor_R_pwm_pin, 0);
+  while (leftRunning || rightRunning) {
+    unsigned long leftCount, rightCount;
 
+    noInterrupts();
+    leftCount = leftPulses;
+    rightCount = rightPulses;
+    interrupts();
 
-  Serial.print("Encoder pulses: ");
-  Serial.println(encoderPulses);
+    if (leftRunning && leftCount >= leftTarget) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      leftRunning = false;
+    }
+
+    if (rightRunning && rightCount >= rightTarget) {
+      analogWrite(Motor_R_pwm_pin, 0);
+      rightRunning = false;
+    }
+
+    // Stop both motors if an encoder stops reporting pulses.
+    if (millis() - startTime >= 10000) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      analogWrite(Motor_R_pwm_pin, 0);
+      break;
+    }
+  }
+
+  noInterrupts();
+  unsigned long finalLeft = leftPulses;
+  unsigned long finalRight = rightPulses;
+  interrupts();
+
+  Serial.print("Left: ");
+  Serial.print(finalLeft);
+  Serial.print(" / ");
+  Serial.println(leftTarget);
+
+  Serial.print("Right: ");
+  Serial.print(finalRight);
+  Serial.print(" / ");
+  Serial.println(rightTarget);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Left A: ");
+  lcd.print(finalLeft);
+  lcd.setCursor(0, 1);
+  lcd.print("Right A: ");
+  lcd.print(finalRight);
 }
+
 
 void interface1() {
     lcd.setCursor(0, 0);
