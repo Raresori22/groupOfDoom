@@ -73,8 +73,8 @@ void loop() {
 int readCompass() {
   int heading = -1;
 
-  Wire.beginTransmission(CMPS14_address);
-  Wire.write(1);
+  Wire.beginTransmission(CMPS14_address); //prepare to send data to compass @ address 0x60
+  Wire.write(1); //select register 1, register = numbered location in compass. register 1 contains compass's 8 bit bearing with value from 0 to 255
 
   int error = Wire.endTransmission();
 
@@ -84,7 +84,7 @@ int readCompass() {
     if (Wire.available()) {
       int bearing = Wire.read();
       heading = bearing * 360L / 256;
-      heading = (heading - 194 + 360) % 360; // Measured north reference before applying the offset
+      heading = (heading - 194 + 360) % 360; // measured north reference before applying the offset
       const char* direction;
 
       if (heading < 23) direction = "N";
