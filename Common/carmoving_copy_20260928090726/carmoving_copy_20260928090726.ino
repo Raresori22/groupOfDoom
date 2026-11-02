@@ -1,17 +1,15 @@
+#include <Wire.h>
+#include <LiquidCrystal.h>
+
 #define Motor_return    0
 #define Motor_forward     1
 #define Motor_L_dir_pin  7
 #define Motor_R_dir_pin  8
 #define Motor_L_pwm_pin  9
 #define Motor_R_pwm_pin  10
-#include <LiquidCrystal.h>
 #define LEFT_ENCA 3
 #define RIGHT_ENCA 2
-#include <Wire.h>
 #define CMPS14_address 0x60
-
-const int turnSpeed = 100;
-const int headingTolerance = 4;
 
 
 const int rs = 37, en = 36, d4 = 35, d5 = 34, d6 = 33, d7 = 32;
@@ -27,28 +25,17 @@ int xValue, yValue;
 float xValuePercentage, yValuePercentage;
 int joystickButtonPin = 18;
 
-
+const int headingTolerance = 4;
+const unsigned long TURN_TIMEOUT = 10000;
+const float HEADING_KP = 3.0;
+const int turnAngle = 110;
+float heading = 0;
+const float headingOffset = 0.0;
 
 void setup() {
   lcd.begin(20,4);
-  Serial.begin(9600);
+  Serial.begin(115200);
   Wire.begin();
-  Wire.setWireTimeout(25000, true);
-  delay(500);
-  Serial.println("Scanning I2C addresses...");
-  bool deviceFound = false;
-  for (int address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    if (Wire.endTransmission() == 0) {
-      Serial.print("Found device at 0x");
-      Serial.println(address, HEX);
-      deviceFound = true;
-    }
-  }
-  if (!deviceFound) {
-    Serial.println("No I2C devices found");
-  }
-  Serial.println("Scan finished");
   pinMode(Motor_L_dir_pin, OUTPUT);
   pinMode(Motor_R_dir_pin, OUTPUT);
   pinMode(Motor_L_pwm_pin, OUTPUT);
@@ -59,109 +46,36 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(joystickButtonPin), buttonInterrupt, FALLING);
   attachInterrupt(digitalPinToInterrupt(LEFT_ENCA), leftEncoderISR, RISING);
   attachInterrupt(digitalPinToInterrupt(RIGHT_ENCA), rightEncoderISR, RISING);
+  lcd.setCursor(0,2);
+  lcd.print("Left A: 0");
+  lcd.setCursor(0,3);
+  lcd.print("Right A: 0");
 }
 
 void loop() {
-  if (buttonPressed) {
+  readCompass();
+  showHeading();
+
+  xValue = analogRead(A8);
+  yValue = analogRead(A9);
+  xValuePercentage = (xValue/1023.0) * 100;
+  yValuePercentage = (yValue/1023.0) * 100;
+  // int(255 * xValuePercentage)
+  if(counter % 2 == 0) {
+    interface1();
+  } else {
+   interface2();
+  }
+  if(buttonPressed) {
     buttonPressed = false;
+    counter++;
     driveRoute();
     buttonPressed = false;
   }
-  delay(50);
+  // controlCar();
+
+  delay(100);
 }
-
-int readCompass() {
-  int heading = -1;
-
-  Wire.beginTransmission(CMPS14_address); //prepare to send data to compass @ address 0x60
-  Wire.write(1); //select register 1, register = numbered location in compass. register 1 contains compass's 8 bit bearing with value from 0 to 255
-
-  int error = Wire.endTransmission();
-
-  if (error == 0) {
-    Wire.requestFrom(CMPS14_address, 1);
-
-    if (Wire.available()) {
-      int bearing = Wire.read();
-      heading = bearing * 360L / 256;
-      heading = (heading - 194 + 360) % 360; // measured north reference before applying the offset
-      const char* direction;
-
-      if (heading < 23) direction = "N";
-      else if (heading < 68) direction = "NE";
-      else if (heading < 113) direction = "E";
-      else if (heading < 158) direction = "SE";
-      else if (heading < 203) direction = "S";
-      else if (heading < 248) direction = "SW";
-      else if (heading < 293) direction = "W";
-      else if (heading < 338) direction = "NW";
-      else direction = "N";
-
-      lcd.setCursor(0, 0);
-      lcd.print("Bearing: ");
-      lcd.print(heading);
-      lcd.print(" ");
-      lcd.print(direction);
-      lcd.print("    ");
-      Serial.println(heading);
-    } else {
-      Serial.println("No data received");
-    }
-  } else {
-    Serial.print("Compass communication error: ");
-    Serial.println(error);
-  }
-
-
-  return heading;
-}
-
-void stopCar() {
-  analogWrite(Motor_L_pwm_pin, 0);
-  analogWrite(Motor_R_pwm_pin, 0);
-}
-
-bool find_heading(int given_degree) {
-  unsigned long startTime = millis();
-  while (millis() - startTime < 10000) {
-    int heading = readCompass();
-    stopCar();
-    if (heading < 0) return false;
-
-    int difference = (given_degree - heading + 540) % 360 - 180;
-    if (abs(difference) <= headingTolerance) return true;
-
-    if (difference > 0) {
-      digitalWrite(Motor_L_dir_pin, Motor_forward);
-      digitalWrite(Motor_R_dir_pin, Motor_return);
-    } else {
-      digitalWrite(Motor_L_dir_pin, Motor_return);
-      digitalWrite(Motor_R_dir_pin, Motor_forward);
-    }
-    analogWrite(Motor_L_pwm_pin, turnSpeed);
-    analogWrite(Motor_R_pwm_pin, turnSpeed);
-    delay(50);
-  }
-  stopCar();
-  Serial.println("Turn timed out");
-  return false;
-}
-
-void driveRoute() {
-  int startHeading = readCompass();
-  if (startHeading < 0) {
-    stopCar();
-    return;
-  }
-
-  if (!moveCar(20, 128)) return;
-  if (!find_heading((startHeading + 360 - 110) % 360)) return;
-  if (!moveCar(13, 64)) return;
-  if (!find_heading((startHeading + 360 - 220) % 360)) return;
-  if (!moveCar(20, 191)) return;
-  Serial.println("Route finished");
-}
-
 
 void buttonInterrupt() {
   unsigned long now = millis();
@@ -216,23 +130,20 @@ void controlCar() {
 
 }
 
-const float leftPulsesPerCm = 13.48;    
-const float rightPulsesPerCm = 13.85;    
+const float distanceCm = 100.0;         // Distance you want to drive
+const float leftPulsesPerCm = 13.11;     // Enter your measured value
+const float rightPulsesPerCm = 13.45;    // Enter your measured value
 
-bool moveCar(float distanceCm, int speed) {
+void moveCar() {
   if (leftPulsesPerCm <= 0 || rightPulsesPerCm <= 0) {
-    stopCar();
     Serial.println("Enter both pulses-per-cm values first.");
-    return false;
+    return;
   }
 
-unsigned long leftTarget =
-    (unsigned long)(distanceCm * leftPulsesPerCm + 0.5);
-unsigned long rightTarget =
-    (unsigned long)(distanceCm * rightPulsesPerCm + 0.5);
-
-if (leftTarget > 0) leftTarget--;
-if (rightTarget > 0) rightTarget--;
+  unsigned long leftTarget  = (unsigned long)(distanceCm * leftPulsesPerCm + 0.5);
+  unsigned long rightTarget = (unsigned long)(distanceCm * rightPulsesPerCm + 0.5);
+  if (leftTarget > 0) leftTarget--;
+  if (rightTarget > 0) rightTarget--;
 
   digitalWrite(Motor_L_dir_pin, Motor_forward);
   digitalWrite(Motor_R_dir_pin, Motor_forward);
@@ -242,36 +153,48 @@ if (rightTarget > 0) rightTarget--;
   rightPulses = 0;
   interrupts();
 
-  analogWrite(Motor_L_pwm_pin, speed * 189L / 200);
-  analogWrite(Motor_R_pwm_pin, speed);
+  analogWrite(Motor_L_pwm_pin, 100);
+  analogWrite(Motor_R_pwm_pin, 100);
 
   bool leftRunning = true;
   bool rightRunning = true;
-  unsigned long startTime = millis();
+  unsigned long lastLeftCount = 0, lastRightCount = 0;
+  unsigned long lastProgressTime = millis();
+  const unsigned long STALL_TIMEOUT = 1000;   // ms with no new pulses = stalled
 
   while (leftRunning || rightRunning) {
-  if (millis() - startTime >= 10000) {
-    stopCar();
-    Serial.println("Drive timed out");
-    return false;
-  }
-  unsigned long leftCount, rightCount;
+    unsigned long leftCount, rightCount;
 
-  noInterrupts();
-  leftCount = leftPulses;
-  rightCount = rightPulses;
-  interrupts();
+    noInterrupts();
+    leftCount = leftPulses;
+    rightCount = rightPulses;
+    interrupts();
 
-  if (leftRunning && leftCount >= leftTarget) {
-    analogWrite(Motor_L_pwm_pin, 0);
-    leftRunning = false;
-  }
+    if (leftRunning && leftCount >= leftTarget) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      leftRunning = false;
+    }
+    if (rightRunning && rightCount >= rightTarget) {
+      analogWrite(Motor_R_pwm_pin, 0);
+      rightRunning = false;
+    }
 
-  if (rightRunning && rightCount >= rightTarget) {
-    analogWrite(Motor_R_pwm_pin, 0);
-    rightRunning = false;
+    // Reset the stall timer whenever a running wheel makes progress
+    if ((leftRunning && leftCount != lastLeftCount) ||
+        (rightRunning && rightCount != lastRightCount)) {
+      lastProgressTime = millis();
+    }
+    lastLeftCount = leftCount;
+    lastRightCount = rightCount;
+
+    // Safety stop: an encoder stopped reporting or a wheel is blocked
+    if (millis() - lastProgressTime >= STALL_TIMEOUT) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      analogWrite(Motor_R_pwm_pin, 0);
+      Serial.println("Stopped: encoder stalled");
+      break;
+    }
   }
-}
 
   noInterrupts();
   unsigned long finalLeft = leftPulses;
@@ -288,14 +211,16 @@ if (rightTarget > 0) rightTarget--;
   Serial.print(" / ");
   Serial.println(rightTarget);
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
+  lcd.setCursor(0, 2);
   lcd.print("Left A: ");
   lcd.print(finalLeft);
-  lcd.setCursor(0, 1);
+  lcd.print("    ");
+  lcd.setCursor(0, 3);
   lcd.print("Right A: ");
   lcd.print(finalRight);
-  return true;
+  lcd.print("    ");
+
+
 }
 
 
@@ -314,6 +239,7 @@ void interface1() {
     lcd.setCursor(9, 1);
     lcd.print(yValuePercentage, 0);
     lcd.print("%   ");
+
 }
 
 void interface2() {
@@ -324,4 +250,230 @@ void interface2() {
 
     lcd.setCursor(0, 1);
     lcd.print("                "); 
+}
+
+bool readCompass() {
+  Wire.beginTransmission(CMPS14_address);
+  Wire.write(0x01);
+  byte err = Wire.endTransmission(false);
+
+  if (err != 0) {
+    Serial.print("err: ");
+    Serial.println(err);
+    return false;
+  }
+
+  Wire.requestFrom((uint8_t)CMPS14_address, (uint8_t)1, (uint8_t)true);
+
+  if (Wire.available()) {
+    uint8_t bearing = Wire.read();
+    heading = bearing * 360.0 / 256.0 - headingOffset;
+    if (heading < 0) {
+      heading = heading + 360;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+void showHeading() {
+  String direction;
+
+  if (heading >= 23 && heading < 68) {
+    direction = "NE";
+  } else if (heading >= 68 && heading < 113) {
+    direction = "E";
+  } else if (heading >= 113 && heading < 158) {
+    direction = "SE";
+  } else if (heading >= 158 && heading < 203) {
+    direction = "S";
+  } else if (heading >= 203 && heading < 248) {
+    direction = "SW";
+  } else if (heading >= 248 && heading < 293) {
+    direction = "W";
+  } else if (heading >= 293 && heading < 338) {
+    direction = "NW";
+  } else {
+    direction = "N";
+  }
+
+  Serial.print(heading);
+  Serial.print(" ");
+  Serial.println(direction);
+
+  lcd.setCursor(14, 2);
+  lcd.print("      ");
+  lcd.setCursor(14, 2);
+  lcd.print((int)heading);
+  lcd.print(" ");
+  lcd.print(direction);
+}
+
+void find_heading(int given_degree) {
+  unsigned long startTime = millis();
+
+  while (true) {
+    if (readCompass() == false) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      analogWrite(Motor_R_pwm_pin, 0);
+      Serial.println("Compass read failed");
+      break;
+    }
+    showHeading();
+
+    float error = given_degree - heading;
+    if (error > 180) {
+      error = error - 360;
+    }
+    if (error < -180) {
+      error = error + 360;
+    }
+
+    if (error >= -headingTolerance && error <= headingTolerance) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      analogWrite(Motor_R_pwm_pin, 0);
+      break;
+    }
+
+    if (millis() - startTime > TURN_TIMEOUT) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      analogWrite(Motor_R_pwm_pin, 0);
+      Serial.println("Stopped: turn timeout");
+      break;
+    }
+
+    int speed;
+    if (error > 0) {
+      speed = error * 2;
+      digitalWrite(Motor_L_dir_pin, Motor_forward);
+      digitalWrite(Motor_R_dir_pin, Motor_return);
+    } else {
+      speed = -error * 2;
+      digitalWrite(Motor_L_dir_pin, Motor_return);
+      digitalWrite(Motor_R_dir_pin, Motor_forward);
+    }
+    speed = constrain(speed, 60, 150);
+
+    analogWrite(Motor_L_pwm_pin, speed);
+    analogWrite(Motor_R_pwm_pin, speed);
+
+    delay(10);
+  }
+}
+
+bool driveStraight(float distance, int speedPercent, int holdHeading) {
+  int speed = 255 * speedPercent / 100;
+  unsigned long leftCount = 0, rightCount = 0;
+  unsigned long lastLeftCount = 0, lastRightCount = 0;
+  unsigned long lastProgressTime = millis();
+  const unsigned long STALL_TIMEOUT = 1000;
+
+  noInterrupts();
+  leftPulses = 0;
+  rightPulses = 0;
+  interrupts();
+
+  digitalWrite(Motor_L_dir_pin, Motor_forward);
+  digitalWrite(Motor_R_dir_pin, Motor_forward);
+
+  while (true) {
+    noInterrupts();
+    leftCount = leftPulses;
+    rightCount = rightPulses;
+    interrupts();
+
+    float leftCm = leftCount / leftPulsesPerCm;
+    float rightCm = rightCount / rightPulsesPerCm;
+    if ((leftCm + rightCm) / 2 >= distance) {
+      break;
+    }
+
+    int correction = 0;
+    if (readCompass() == true) {
+      float error = holdHeading - heading;
+      if (error > 180) {
+        error = error - 360;
+      }
+      if (error < -180) {
+        error = error + 360;
+      }
+      correction = error * HEADING_KP;
+      correction = constrain(correction, -speed / 2, speed / 2);
+    }
+
+    analogWrite(Motor_L_pwm_pin, constrain(speed + correction, 0, 255));
+    analogWrite(Motor_R_pwm_pin, constrain(speed - correction, 0, 255));
+
+    if (leftCount != lastLeftCount || rightCount != lastRightCount) {
+      lastProgressTime = millis();
+    }
+    lastLeftCount = leftCount;
+    lastRightCount = rightCount;
+
+    if (millis() - lastProgressTime >= STALL_TIMEOUT) {
+      analogWrite(Motor_L_pwm_pin, 0);
+      analogWrite(Motor_R_pwm_pin, 0);
+      Serial.println("Stopped: encoder stalled");
+      return false;
+    }
+  }
+
+  analogWrite(Motor_L_pwm_pin, 0);
+  analogWrite(Motor_R_pwm_pin, 0);
+
+  Serial.print("Left: ");
+  Serial.print(leftCount);
+  Serial.print("  Right: ");
+  Serial.println(rightCount);
+
+  lcd.setCursor(0, 2);
+  lcd.print("Left A: ");
+  lcd.print(leftCount);
+  lcd.print("  ");
+  lcd.setCursor(0, 3);
+  lcd.print("Right A: ");
+  lcd.print(rightCount);
+  lcd.print("  ");
+
+  return true;
+}
+
+void driveRoute() {
+  if (readCompass() == false) {
+    Serial.println("Compass read failed");
+    return;
+  }
+
+  int firstHeading = heading;
+  int secondHeading = firstHeading - turnAngle;
+  if (secondHeading < 0) {
+    secondHeading = secondHeading + 360;
+  }
+  int thirdHeading = secondHeading - turnAngle;
+  if (thirdHeading < 0) {
+    thirdHeading = thirdHeading + 360;
+  }
+
+  Serial.println("Route start");
+
+  if (driveStraight(20, 75, firstHeading) == false) {
+    return;
+  }
+  delay(300);
+  find_heading(secondHeading);
+  delay(300);
+
+  if (driveStraight(13, 25, secondHeading) == false) {
+    return;
+  }
+  delay(300);
+  find_heading(thirdHeading);
+  delay(300);
+
+  if (driveStraight(20, 50, thirdHeading) == false) {
+    return;
+  }
+
+  Serial.println("Route done");
 }
