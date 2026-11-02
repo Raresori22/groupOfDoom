@@ -34,7 +34,7 @@ const float headingOffset = 0.0;
 
 void setup() {
   lcd.begin(20,4);
-  Serial.begin(115200);
+  Serial.begin(9600);
   Wire.begin();
   pinMode(Motor_L_dir_pin, OUTPUT);
   pinMode(Motor_R_dir_pin, OUTPUT);
@@ -55,6 +55,7 @@ void setup() {
 void loop() {
   readCompass();
   showHeading();
+  readValues();
 
   xValue = analogRead(A8);
   yValue = analogRead(A9);
@@ -130,16 +131,55 @@ void controlCar() {
 
 }
 
-const float distanceCm = 100.0;         // Distance you want to drive
 const float leftPulsesPerCm = 13.11;     // Enter your measured value
 const float rightPulsesPerCm = 13.45;    // Enter your measured value
 
-void moveCar() {
+void readValues(){
+  if (Serial.available() > 0){
+    String message = Serial.readStringUntil('\n'); 
+    Serial.print("Message received, content: ");  
+    Serial.println(message);
+
+    if (message.indexOf("LCD") > -1){
+      Serial.println("Command = LCD ");
+      int pos_s = message.indexOf(":");
+
+      if (pos_s > -1){
+        String stat = message.substring(pos_s + 1);
+        lcd.setCursor(0,0);
+        lcd.print(stat);
+      } 
+    }
+
+    else if(message.indexOf("dist") > -1){
+      Serial.println("Command = dist ");
+      int pos_s = message.indexOf(":");
+      if (pos_s > -1){
+        int distance = message.substring(pos_s + 1).toInt();
+        moveCar(distance);
+      }
+    }
+
+    else if(message.indexOf("degree") > -1){
+      Serial.println("Command = degree ");
+      int pos_s = message.indexOf(":");
+      if (pos_s > -1){
+        int degree = message.substring(pos_s + 1).toInt();
+      }
+    }
+
+    else{
+	    Serial.println("No greeting found, try typing Print:Hi or Print:Hello\n");
+    }
+  }
+}
+
+void moveCar(int distanceCm) {
   if (leftPulsesPerCm <= 0 || rightPulsesPerCm <= 0) {
     Serial.println("Enter both pulses-per-cm values first.");
     return;
   }
-
+  
   unsigned long leftTarget  = (unsigned long)(distanceCm * leftPulsesPerCm + 0.5);
   unsigned long rightTarget = (unsigned long)(distanceCm * rightPulsesPerCm + 0.5);
   if (leftTarget > 0) leftTarget--;
@@ -298,9 +338,9 @@ void showHeading() {
     direction = "N";
   }
 
-  Serial.print(heading);
+  /*Serial.print(heading);
   Serial.print(" ");
-  Serial.println(direction);
+  Serial.println(direction);*/
 
   lcd.setCursor(14, 2);
   lcd.print("      ");
