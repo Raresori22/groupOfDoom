@@ -31,6 +31,8 @@ const float HEADING_KP = 3.0;
 const int turnAngle = 110;
 float heading = 0;
 const float headingOffset = 0.0;
+String headingCommand = "";
+String distanceCommand = "";
 
 void setup() {
   lcd.begin(20,4);
@@ -155,6 +157,9 @@ void readValues(){
       Serial.println("Command = dist ");
       int pos_s = message.indexOf(":");
       if (pos_s > -1){
+        message.trim();
+        distanceCommand = message;
+        interface1();
         int distance = message.substring(pos_s + 1).toInt();
         moveCar(distance);
       }
@@ -162,10 +167,7 @@ void readValues(){
 
     else if(message.indexOf("degree") > -1){
       Serial.println("Command = degree ");
-      int pos_s = message.indexOf(":");
-      if (pos_s > -1){
-        int degree = message.substring(pos_s + 1).toInt();
-      }
+      handleDegreeCommand(message);
     }
 
     else{
@@ -174,19 +176,42 @@ void readValues(){
   }
 }
 
+void handleDegreeCommand(String message) {
+  int pos = message.indexOf(':');
+  if (pos == -1) return;
+  
+
+  int degree = message.substring(pos + 1).toInt();
+  if (degree < 0 || degree >= 360) {
+    Serial.println("Heading must be between 0 and 359 degrees.");
+    return;
+  }
+
+  message.trim();
+  headingCommand = message;
+  headingCommand.replace("degree", "deg");
+  interface1();
+  find_heading(degree);
+}
+
 void moveCar(int distanceCm) {
+  if (distanceCm == 0) return;
+
   if (leftPulsesPerCm <= 0 || rightPulsesPerCm <= 0) {
     Serial.println("Enter both pulses-per-cm values first.");
     return;
   }
-  
-  unsigned long leftTarget  = (unsigned long)(distanceCm * leftPulsesPerCm + 0.5);
-  unsigned long rightTarget = (unsigned long)(distanceCm * rightPulsesPerCm + 0.5);
+
+  float distance = distanceCm;
+  if (distance < 0) distance = -distance;
+  unsigned long leftTarget  = (unsigned long)(distance * leftPulsesPerCm + 0.5);
+  unsigned long rightTarget = (unsigned long)(distance * rightPulsesPerCm + 0.5);
   if (leftTarget > 0) leftTarget--;
   if (rightTarget > 0) rightTarget--;
 
-  digitalWrite(Motor_L_dir_pin, Motor_forward);
-  digitalWrite(Motor_R_dir_pin, Motor_forward);
+  int direction = (distanceCm < 0) ? Motor_return : Motor_forward;
+  digitalWrite(Motor_L_dir_pin, direction);
+  digitalWrite(Motor_R_dir_pin, direction);
 
   noInterrupts();
   leftPulses = 0;
@@ -269,16 +294,22 @@ void interface1() {
     lcd.print("x:");
     lcd.print(xValue);
     lcd.print("    ");
-    lcd.setCursor(9, 0);
+    lcd.setCursor(6, 0);
     lcd.print(xValuePercentage, 0);
     lcd.print("%    ");
+    lcd.setCursor(10, 0);
+    lcd.print(headingCommand.substring(0, 10));
+    lcd.print("  ");
     lcd.setCursor(0, 1);
     lcd.print("y:");
     lcd.print(yValue);
     lcd.print("    ");
-    lcd.setCursor(9, 1);
+    lcd.setCursor(6, 1);
     lcd.print(yValuePercentage, 0);
     lcd.print("%   ");
+    lcd.setCursor(10, 1);
+    lcd.print(distanceCommand.substring(0, 10));
+    lcd.print("  ");
 
 }
 
